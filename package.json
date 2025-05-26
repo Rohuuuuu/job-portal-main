@@ -4,9 +4,7 @@
   "description": "Job Portal Application",
   "main": "index.js",
   "scripts": {
-    "start": "cd backend && npm install && npm start",
-    "dev": "cd backend && npm install && npm run start",
-    "install-all": "npm install && cd frontend && npm install && cd ../backend && npm install"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
   "license": "ISC"
