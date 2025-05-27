@@ -2,10 +2,8 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs");
 const { v4: uuidv4 } = require("uuid");
-const { promisify } = require("util");
 const path = require("path");
-
-const pipeline = promisify(require("stream").pipeline);
+const jwtAuth = require("../lib/jwtAuth");
 
 const router = express.Router();
 
@@ -19,75 +17,70 @@ const createDirIfNotExists = (dir) => {
 createDirIfNotExists(path.join(__dirname, "../public/resume"));
 createDirIfNotExists(path.join(__dirname, "../public/profile"));
 
-const upload = multer();
-
-router.post("/resume", upload.single("file"), (req, res) => {
-  const { file } = req;
-  
-  if (!file) {
-    return res.status(400).json({
-      message: "No file uploaded",
-    });
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const type = file.fieldname === "resume" ? "resume" : "profile";
+    cb(null, path.join(__dirname, `../public/${type}`));
+  },
+  filename: function (req, file, cb) {
+    const extension = path.extname(file.originalname);
+    cb(null, `${uuidv4()}${extension}`);
   }
-
-  if (file.mimetype !== "application/pdf") {
-    res.status(400).json({
-      message: "Invalid format. Only PDF files are allowed.",
-    });
-    return;
-  }
-
-  const filename = `${uuidv4()}.pdf`;
-  const filepath = path.join(__dirname, `../public/resume/${filename}`);
-
-  pipeline(file.stream, fs.createWriteStream(filepath))
-    .then(() => {
-      res.json({
-        message: "File uploaded successfully",
-        url: `/host/resume/${filename}`,
-      });
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(400).json({
-        message: "Error while uploading",
-      });
-    });
 });
 
-router.post("/profile", upload.single("file"), (req, res) => {
-  const { file } = req;
-
-  if (!file) {
-    return res.status(400).json({
-      message: "No file uploaded",
-    });
+const fileFilter = (req, file, cb) => {
+  if (file.fieldname === "resume") {
+    if (file.mimetype === "application/pdf") {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only PDF files are allowed."), false);
+    }
+  } else if (file.fieldname === "profile") {
+    if (file.mimetype === "image/jpeg" || file.mimetype === "image/png") {
+      cb(null, true);
+    } else {
+      cb(new Error("Invalid file type. Only JPG/PNG files are allowed."), false);
+    }
   }
+};
 
-  if (!["image/jpeg", "image/png"].includes(file.mimetype)) {
-    res.status(400).json({
-      message: "Invalid format. Only JPG/PNG files are allowed.",
-    });
-    return;
+const upload = multer({ 
+  storage: storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
   }
+});
 
-  const extension = file.mimetype === "image/jpeg" ? ".jpg" : ".png";
-  const filename = `${uuidv4()}${extension}`;
-  const filepath = path.join(__dirname, `../public/profile/${filename}`);
-
-  pipeline(file.stream, fs.createWriteStream(filepath))
-    .then(() => {
-      res.json({
-        message: "Profile image uploaded successfully",
-        url: `/host/profile/${filename}`,
-      });
-    })
-    .catch((err) => {
-      console.error(err);
-      res.status(400).json({
-        message: "Error while uploading",
-      });
+router.post("/resume", jwtAuth, upload.single("resume"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    res.json({
+      message: "Resume uploaded successfully",
+      url: `/host/resume/${req.file.filename}`
     });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error uploading file" });
+  }
+});
+
+router.post("/profile", jwtAuth, upload.single("profile"), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    res.json({
+      message: "Profile image uploaded successfully",
+      url: `/host/profile/${req.file.filename}`
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error uploading file" });
+  }
 });
 
 module.exports = router;
